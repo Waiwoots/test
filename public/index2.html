@@ -1,0 +1,143 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebRTC Video Call and Chat</title>
+  <style>
+    /* CSS สำหรับจัดวางหน้าต่างวิดีโอและช่องแชท */
+    #videoContainer {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 20px;
+    }
+    video {
+      width: 45%;
+      border: 2px solid #333;
+    }
+    #chatContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #chatBox {
+      width: 80%;
+      height: 200px;
+      border: 1px solid #333;
+      overflow-y: auto;
+      margin-bottom: 10px;
+      padding: 5px;
+    }
+    #messageInput {
+      width: 80%;
+      padding: 5px;
+    }
+    #sendButton {
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebRTC Video Call and Chat</h1>
+  
+  <div id="videoContainer">
+    <video id="localVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" autoplay playsinline></video>
+  </div>
+
+  <div id="chatContainer">
+    <div id="chatBox"></div>
+    <input type="text" id="messageInput" placeholder="Type your message here">
+    <button id="sendButton" onclick="sendMessage()">Send</button>
+  </div>
+
+  <button onclick="startAsInitiator()">Start as Initiator</button>
+  <button onclick="startAsReceiver()">Start as Receiver</button>
+  
+  <script>
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    const ws = new WebSocket("wss://webrtc-rr8i.onrender.com");
+
+    let localStream;
+    let peerConnection;
+
+    const chatBox = document.getElementById("chatBox");
+    const messageInput = document.getElementById("messageInput");
+
+    // WebSocket message handler
+    ws.onmessage = async (event) => {
+      const message = JSON.parse(event.data);
+
+      if (message.type === "offer") {
+        await createAnswer(message.offer);
+      } else if (message.type === "answer") {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+      } else if (message.type === "candidate") {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+      } else if (message.type === "chat") {
+        displayMessage("Other: " + message.text);
+      }
+    };
+
+    async function startWebRTC() {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = localStream;
+
+      peerConnection = new RTCPeerConnection();
+
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+        }
+      };
+
+      peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+      };
+    }
+
+    async function startAsInitiator() {
+      await startWebRTC();
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: "offer", offer }));
+    }
+
+    async function startAsReceiver() {
+      await startWebRTC();
+    }
+
+    async function createAnswer(offer) {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: "answer", answer }));
+    }
+
+    // ฟังก์ชันสำหรับส่งข้อความแชท
+    function sendMessage() {
+      const message = messageInput.value;
+      if (message) {
+        ws.send(JSON.stringify({ type: "chat", text: message }));
+        displayMessage("You: " + message);
+        messageInput.value = ""; // ล้างข้อความหลังส่ง
+      }
+    }
+
+    // ฟังก์ชันสำหรับแสดงข้อความใน chat box
+    function displayMessage(text) {
+      const messageElement = document.createElement("div");
+      messageElement.textContent = text;
+      chatBox.appendChild(messageElement);
+      chatBox.scrollTop = chatBox.scrollHeight; // เลื่อนให้เห็นข้อความล่าสุด
+    }
+  </script>
+</body>
+</html>
+
+
+    
